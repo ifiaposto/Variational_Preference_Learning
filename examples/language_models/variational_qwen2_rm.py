@@ -12,7 +12,7 @@ python -m torch.distributed.run \
   -m examples.language_models.variational_qwen2_rm \
   --model_name_or_path=Qwen/Qwen2-0.5B-Instruct \
   --dataset_name=trl-lib/ultrafeedback_binarized \
-  --output_dir=Variational-Qwen2-0.5B-Reward_0.25 \
+  --output_dir=Variational-Qwen2-0.5B-Reward \
   --per_device_train_batch_size=16 \
   --num_train_epochs=1 \
   --gradient_accumulation_steps=1 \
