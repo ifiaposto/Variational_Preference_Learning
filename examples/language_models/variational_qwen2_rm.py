@@ -23,13 +23,14 @@ python -m torch.distributed.run \
   --eval_strategy=steps \
   --eval_steps=50 \
   --max_length=2048 \
-  --eval_num_mc_samples=1000 \
-  --train_num_mc_samples=1000 \
   --save_steps=50000 \
   --report_to=tensorboard \
+  --eval_num_mc_samples=1000 \
+  --train_num_mc_samples=1000 \
   --prior_scale=1.0 \
   --posterior_scale=0.25 \
-  --covariance_perturb_rank=3
+  --covariance_perturb_rank=3 \
+  --include_uncertainties_for_metrics=False
 
 
 
