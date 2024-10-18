@@ -15,16 +15,21 @@ import torch
 import torch.nn as nn
 from accelerate.utils import gather_object
 from datasets import Dataset
-from transformers import DataCollator, PreTrainedModel, PreTrainedTokenizerBase, Trainer, TrainingArguments
+from transformers import (
+    DataCollator,
+    PreTrainedModel,
+    PreTrainedTokenizerBase,
+    Trainer,
+    TrainingArguments,
+)
 from transformers.trainer_callback import TrainerCallback
 from transformers.trainer_pt_utils import nested_detach
 from transformers.trainer_utils import EvalPrediction
 from transformers.utils import is_peft_available
-
+from .utils import compute_accuracy_calibration
 from trl.trainer.reward_config import RewardConfig
 from trl.trainer.utils import (
     RewardDataCollatorWithPadding,
-    compute_accuracy,
     decode_and_strip_padding,
     print_rich_table,
     trl_sanitze_kwargs_for_tagging,
@@ -67,13 +72,13 @@ class RewardTrainer(Trainer):
         model_init: Optional[Callable[[], PreTrainedModel]] = None,
         compute_metrics: Optional[Callable[[EvalPrediction], Dict]] = None,
         callbacks: Optional[List[TrainerCallback]] = None,
-        optimizers: Tuple[torch.optim.Optimizer,
-                          torch.optim.lr_scheduler.LambdaLR] = (
-                              None,
-                              None,
-                          ),
-        preprocess_logits_for_metrics: Optional[Callable[
-            [torch.Tensor, torch.Tensor], torch.Tensor]] = None,
+        optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (
+            None,
+            None,
+        ),
+        preprocess_logits_for_metrics: Optional[
+            Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+        ] = None,
         max_length: Optional[int] = None,
         peft_config: Optional[Dict] = None,
     ):
@@ -96,8 +101,8 @@ class RewardTrainer(Trainer):
                 The tokenizer to use for training. This argument is required if you want to use the default data collator.
             model_init (`Callable[[], transformers.PreTrainedModel]`):
                 The model initializer to use for training. If None is specified, the default model initializer will be used.
-            compute_metrics (`Callable[[transformers.EvalPrediction], Dict]`, *optional* defaults to `compute_accuracy`):
-                The metrics to use for evaluation. If no metrics are specified, the default metric (`compute_accuracy`) will be used.
+            compute_metrics (`Callable[[transformers.EvalPrediction], Dict]`, *optional* defaults to `compute_accuracy_calibration`):
+                The metrics to use for evaluation. If no metrics are specified, the default metric (`compute_accuracy_calibration`) will be used.
             callbacks (`List[transformers.TrainerCallback]`):
                 The callbacks to use for training.
             optimizers (`Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR]`):
@@ -136,32 +141,40 @@ class RewardTrainer(Trainer):
         elif is_peft_available() and peft_config is not None:
             if not isinstance(model, PeftModel):
                 if getattr(model, "is_loaded_in_8bit", False) or getattr(
-                        model, "is_quantized", False):
+                    model, "is_quantized", False
+                ):
                     _supports_gc_kwargs = "gradient_checkpointing_kwargs" in list(
-                        inspect.signature(
-                            prepare_model_for_kbit_training).parameters)
+                        inspect.signature(prepare_model_for_kbit_training).parameters
+                    )
 
                     prepare_model_kwargs = {
-                        "use_gradient_checkpointing":
-                        args.gradient_checkpointing
+                        "use_gradient_checkpointing": args.gradient_checkpointing
                     }
 
-                    if not _supports_gc_kwargs and args.gradient_checkpointing_kwargs is not None:
+                    if (
+                        not _supports_gc_kwargs
+                        and args.gradient_checkpointing_kwargs is not None
+                    ):
                         warnings.warn(
                             "You passed `gradient_checkpointing_kwargs` in the trainer's kwargs, but your peft version does not support it. "
                             "please update to the latest version of peft to use `gradient_checkpointing_kwargs`."
                         )
-                    elif _supports_gc_kwargs and args.gradient_checkpointing_kwargs is not None:
-                        prepare_model_kwargs[
-                            "gradient_checkpointing_kwargs"] = args.gradient_checkpointing_kwargs
+                    elif (
+                        _supports_gc_kwargs
+                        and args.gradient_checkpointing_kwargs is not None
+                    ):
+                        prepare_model_kwargs["gradient_checkpointing_kwargs"] = (
+                            args.gradient_checkpointing_kwargs
+                        )
 
                     model = prepare_model_for_kbit_training(
-                        model, **prepare_model_kwargs)
+                        model, **prepare_model_kwargs
+                    )
 
                 model = get_peft_model(model, peft_config)
 
         if compute_metrics is None:
-            compute_metrics = compute_accuracy
+            compute_metrics = compute_accuracy_calibration
 
         if data_collator is None:
             if tokenizer is None:
@@ -188,7 +201,8 @@ class RewardTrainer(Trainer):
                     max_length = args.max_length
 
             data_collator = RewardDataCollatorWithPadding(
-                tokenizer, max_length=max_length)
+                tokenizer, max_length=max_length
+            )
 
             if args.remove_unused_columns:
                 try:  # for bc before https://github.com/huggingface/transformers/pull/25435
@@ -233,7 +247,8 @@ class RewardTrainer(Trainer):
             warnings.warn(
                 "The current compute_loss is implemented for RewardDataCollatorWithPadding,"
                 " if you are using a custom data collator make sure you know what you are doing or"
-                " implement your own compute_loss method.")
+                " implement your own compute_loss method."
+            )
         rewards_chosen = model(
             input_ids=inputs["input_ids_chosen"],
             attention_mask=inputs["attention_mask_chosen"],
@@ -247,16 +262,16 @@ class RewardTrainer(Trainer):
         )["logits"]
         # calculate loss, optionally modulate with margin
         if "margin" in inputs:
-            loss = -nn.functional.logsigmoid(rewards_chosen -
-                                             rewards_rejected -
-                                             inputs["margin"]).mean()
+            loss = -nn.functional.logsigmoid(
+                rewards_chosen - rewards_rejected - inputs["margin"]
+            ).mean()
         else:
-            loss = -nn.functional.logsigmoid(rewards_chosen -
-                                             rewards_rejected).mean()
+            loss = -nn.functional.logsigmoid(rewards_chosen - rewards_rejected).mean()
 
         if self.args.center_rewards_coefficient is not None:
             loss += self.args.center_rewards_coefficient * torch.mean(
-                (rewards_chosen + rewards_rejected)**2)
+                (rewards_chosen + rewards_rejected) ** 2
+            )
 
         if return_outputs:
             return loss, {
@@ -271,27 +286,24 @@ class RewardTrainer(Trainer):
         inputs: Dict[str, Union[torch.Tensor, Any]],
         prediction_loss_only: bool,
         ignore_keys: Optional[List[str]] = None,
-    ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor],
-               Optional[torch.Tensor]]:
+    ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
         inputs = self._prepare_inputs(inputs)
         if ignore_keys is None:
             if hasattr(self.model, "config"):
-                ignore_keys = getattr(self.model.config,
-                                      "keys_to_ignore_at_inference", [])
+                ignore_keys = getattr(
+                    self.model.config, "keys_to_ignore_at_inference", []
+                )
             else:
                 ignore_keys = []
 
         with torch.no_grad():
-            loss, logits_dict = self.compute_loss(model,
-                                                  inputs,
-                                                  return_outputs=True)
+            loss, logits_dict = self.compute_loss(model, inputs, return_outputs=True)
 
         if prediction_loss_only:
             return (loss, None, None)
 
         loss = loss.detach()
-        logits = tuple(v for k, v in logits_dict.items()
-                       if k not in ignore_keys)
+        logits = tuple(v for k, v in logits_dict.items() if k not in ignore_keys)
         logits = nested_detach(logits)
         # Stack accepted against rejected, mean over logits
         # and softmax to get preferences between accepted and rejected to sum to 1
@@ -304,8 +316,8 @@ class RewardTrainer(Trainer):
         return loss, logits, labels
 
     def evaluate(self, *args, **kwargs):
-        #num_print_samples = kwargs.pop("num_print_samples", 4)
-        #self.visualize_samples(num_print_samples)
+        # num_print_samples = kwargs.pop("num_print_samples", 4)
+        # self.visualize_samples(num_print_samples)
         return super().evaluate(*args, **kwargs)
 
     def visualize_samples(self, num_print_samples: int):
@@ -320,20 +332,29 @@ class RewardTrainer(Trainer):
         eval_dataloader = self.get_eval_dataloader()
         table = defaultdict(list)
         for _, inputs in enumerate(eval_dataloader):
-            _, logits, _ = self.prediction_step(self.model,
-                                                inputs,
-                                                prediction_loss_only=False)
-            chosen_text = decode_and_strip_padding(inputs["input_ids_chosen"],
-                                                   self.tokenizer)
+            _, logits, _ = self.prediction_step(
+                self.model, inputs, prediction_loss_only=False
+            )
+            chosen_text = decode_and_strip_padding(
+                inputs["input_ids_chosen"], self.tokenizer
+            )
             rejected_text = decode_and_strip_padding(
-                inputs["input_ids_rejected"], self.tokenizer)
+                inputs["input_ids_rejected"], self.tokenizer
+            )
             table["chosen_text"].extend(gather_object(chosen_text))
             table["rejected_text"].extend(gather_object(rejected_text))
             table["logits"].extend(
-                gather_object([[round(inner_item, 4) for inner_item in item]
-                               for item in logits.tolist()]))
-            if num_print_samples >= 0 and len(
-                    table["chosen_text"]) >= num_print_samples:
+                gather_object(
+                    [
+                        [round(inner_item, 4) for inner_item in item]
+                        for item in logits.tolist()
+                    ]
+                )
+            )
+            if (
+                num_print_samples >= 0
+                and len(table["chosen_text"]) >= num_print_samples
+            ):
                 break
         df = pd.DataFrame(table)
         if self.accelerator.process_index == 0:
@@ -356,9 +377,9 @@ class RewardTrainer(Trainer):
         model on the Hub. Please refer to `~transformers.Trainer.push_to_hub` for more details.
         Unlike the parent class, we don't use the `token` argument to mitigate security risks.
         """
-        kwargs = trl_sanitze_kwargs_for_tagging(model=self.model,
-                                                tag_names=self._tag_names,
-                                                kwargs=kwargs)
-        return super().push_to_hub(commit_message=commit_message,
-                                   blocking=blocking,
-                                   **kwargs)
+        kwargs = trl_sanitze_kwargs_for_tagging(
+            model=self.model, tag_names=self._tag_names, kwargs=kwargs
+        )
+        return super().push_to_hub(
+            commit_message=commit_message, blocking=blocking, **kwargs
+        )

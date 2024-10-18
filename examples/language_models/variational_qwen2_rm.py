@@ -6,14 +6,14 @@
 Full training:
 
 python -m torch.distributed.run \
-  --nproc-per-node=2 \
+  --nproc-per-node=1 \
   --master_addr=127.0.0.1 \
-  --master_port=29504 \
+  --master_port=29510 \
   -m examples.language_models.variational_qwen2_rm \
   --model_name_or_path=Qwen/Qwen2-0.5B-Instruct \
   --dataset_name=trl-lib/ultrafeedback_binarized \
-  --output_dir=Variational-Qwen2-0.5B-Reward \
-  --per_device_train_batch_size=8 \
+  --output_dir=Variational-Qwen2-0.5B-Reward_0.25 \
+  --per_device_train_batch_size=16 \
   --num_train_epochs=1 \
   --gradient_accumulation_steps=1 \
   --remove_unused_columns=False \
@@ -23,12 +23,14 @@ python -m torch.distributed.run \
   --eval_strategy=steps \
   --eval_steps=50 \
   --max_length=2048 \
-  --eval_num_mc_samples=100 \
-  --train_num_mc_samples=1 \
+  --eval_num_mc_samples=1000 \
+  --train_num_mc_samples=1000 \
   --save_steps=50000 \
   --report_to=tensorboard \
   --prior_scale=1.0 \
-  --dropout_rate=0.00001
+  --posterior_scale=0.25 \
+  --covariance_perturb_rank=3
+
 
 
 """
@@ -76,9 +78,7 @@ if __name__ == "__main__":
         if quantization_config is not None else None,
         quantization_config=quantization_config,
         prior_scale=model_config.prior_scale,
-        dropout_rate=model_config.dropout_rate,
         covariance_perturb_rank=model_config.covariance_perturb_rank, 
-        tied_mean=model_config.tied_mean
     )
 
     tokenizer = AutoTokenizer.from_pretrained(
@@ -138,6 +138,7 @@ if __name__ == "__main__":
         # This assumes the chosen/rejected columns are in the OpenAI messages format.
         chosen_fn = conversations_formatting_function(tokenizer, "chosen")
         rejected_fn = conversations_formatting_function(tokenizer, "rejected")
+        
         raw_datasets = raw_datasets.map(lambda x: {
             "chosen": chosen_fn(x),
             "rejected": rejected_fn(x)
@@ -155,6 +156,9 @@ if __name__ == "__main__":
                 x["input_ids_rejected"]) <= config.max_length,
             num_proc=config.dataset_num_proc,
         )
+        
+        
+        
     ##########
     # Training
     ##########

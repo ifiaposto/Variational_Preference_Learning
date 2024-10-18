@@ -104,6 +104,9 @@ class VariationalRegressor(nn.Module):
         x = x * self.x_scale
         W = self.W()
 
+        
+        pred=self.predictive(x)
+        
         # compute predictive distribution and kl penalty
         return VariationalRegressorReturn(
             self.predictive(x),
@@ -115,7 +118,15 @@ class VariationalRegressor(nn.Module):
     def predictive(self, x, W=None):
 
         if W is None:
+             
+            
+            
+
+            x_=x[..., None]
+     
             return (self.W() @ x[..., None]).squeeze(-1)
+            
+            
         return (W @ x[..., None]).squeeze(-1)
 
 
@@ -130,14 +141,17 @@ def compute_marginal_bce(o1, o2, y, num_samples):
     """
 
     # weight_samples: [num_samples,1,1,hidden_features]
-    weight_samples = o1.W.rsample(
+    weight_samples_1 = o1.W.rsample(
+        sample_shape=torch.Size([num_samples]))[:, None, :, :]
+        
+    weight_samples_2 = o1.W.rsample(
         sample_shape=torch.Size([num_samples]))[:, None, :, :]
 
     # x1, x2:[1,batch_size,hidden_features,1 ]
     x1 = o1.x[None, :, :, None]
     x2 = o2.x[None, :, :, None]
 
-    r_diff = weight_samples @ (x1 - x2)
+    r_diff = weight_samples_1 @ x1 -weight_samples_2 @ x2
 
     p = torch.sigmoid(r_diff)
 
@@ -160,14 +174,17 @@ def compute_montecarlo_bce(o1, o2, y, num_samples):
     loss_fn = nn.BCELoss()
 
     # weight_samples: [num_samples,1,1,hidden_features]
-    weight_samples = o1.W.rsample(
+    weight_samples_1 = o1.W.rsample(
+        sample_shape=torch.Size([num_samples]))[:, None, :, :]
+        
+    weight_samples_2 = o1.W.rsample(
         sample_shape=torch.Size([num_samples]))[:, None, :, :]
 
     # x1, x2:[1,batch_size,hidden_features,1 ]
     x1 = o1.x[None, :, :, None]
     x2 = o2.x[None, :, :, None]
 
-    r_diff = weight_samples @ (x1 - x2)
+    r_diff = weight_samples_1 @ x1 -weight_samples_2@ x2
 
     p = torch.sigmoid(r_diff)
 
@@ -263,7 +280,7 @@ def train_variational_bradley_terry(dataloader,
 
             bce = compute_montecarlo_bce(o1, o2, y, args.train_num_mc_samples)
 
-            loss = bce + scaled_kl
+            loss = bce + 2.*scaled_kl
 
             running_train_nelbo_loss.append(loss.item())
             running_train_kl_loss.append(scaled_kl.item())

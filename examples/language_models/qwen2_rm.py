@@ -6,14 +6,14 @@
 Full training:
 
 python -m torch.distributed.run \
-  --nproc-per-node=2 \
+  --nproc-per-node=1 \
   --master_addr=127.0.0.1 \
-  --master_port=29504 \
+  --master_port=29503 \
   -m examples.language_models.qwen2_rm \
   --model_name_or_path=Qwen/Qwen2-0.5B-Instruct \
   --dataset_name=trl-lib/ultrafeedback_binarized \
   --output_dir=Qwen2-0.5B-Reward \
-  --per_device_train_batch_size=8 \
+  --per_device_train_batch_size=16 \
   --num_train_epochs=1 \
   --gradient_accumulation_steps=1 \
   --remove_unused_columns=False \
@@ -27,25 +27,6 @@ python -m torch.distributed.run \
   --report_to=tensorboard \
 
 
-
-LoRA:
-python examples/scripts/reward_modeling.py \
-    --model_name_or_path Qwen/Qwen2-0.5B-Instruct \
-    --dataset_name trl-lib/ultrafeedback_binarized \
-    --output_dir Qwen2-0.5B-Reward \
-    --per_device_train_batch_size 8 \
-    --num_train_epochs 1 \
-    --gradient_accumulation_steps 1 \
-    --remove_unused_columns False \
-    --gradient_checkpointing True \
-    --learning_rate 1.0e-5 \
-    --logging_steps 25 \
-    --eval_strategy steps \
-    --eval_steps 50 \
-    --max_length 2048 /
-    --use_peft \
-    --lora_r 32 \
-    --lora_alpha 16
 """
 
 import warnings

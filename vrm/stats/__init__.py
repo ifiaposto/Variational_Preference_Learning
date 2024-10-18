@@ -1,7 +1,3 @@
-from .distributions import (
-    get_parameterization,
-    Normal, 
-    DenseNormal,
-    LowRankNormal)
+from .distributions import get_parameterization, Normal, DenseNormal, LowRankNormal
 
-from .divergences import (gaussian_kl)
+from .divergences import gaussian_kl

@@ -4,22 +4,17 @@
 import numpy as np
 
 
-def gaussian_kl(p, q_var, tied_mean=False):
+def gaussian_kl(p, q_var):
     """
-           It computes the KL divergence between two Gaussian distributions p and q: KL (p,q).
-           p can be any multivariate Gaussian distribution.
-           The q distribution has covariance matrix S= q_var* I_N, where I_N is the identity matrix.
-           if tied_mean is True, q's mean is fixed at p's mean. Otherwise, q is assumed zero mean.
-        """
+    It computes the KL divergence between two Gaussian distributions p and q: KL (p,q).
+    p can be any multivariate Gaussian distribution.
+    The q distribution has covariance matrix S= q_var* I_N, where I_N is the identity matrix.
+    """
 
     feat_dim = p.mean.shape[-1]
-    
+
     trace_term = (p.trace_covariance / q_var).sum(-1)
     logdet_term = (feat_dim * np.log(q_var) - p.logdet_covariance).sum(-1)
-    
-    if tied_mean:
-        return 0.5 * ( trace_term + logdet_term)
-
 
     mse_term = (p.mean**2).sum(-1).sum(-1) / q_var
     # currently exclude constant

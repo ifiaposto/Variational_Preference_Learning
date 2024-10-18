@@ -1,7 +1,9 @@
-from .trainer import (VariationalRewardTrainer, RewardTrainer,
-                      VariationalRewardConfig)
+from .trainer import VariationalRewardTrainer, RewardTrainer, VariationalRewardConfig
 
-from .models import (VariationalQwen2ForSequenceClassification,
-                     Qwen2ForSequenceClassification, VariationalModelConfig,
-                     SequenceVariationalClassifierOutputWithPast,
-                     VariationalPretrainedConfig)
+from .models import (
+    VariationalQwen2ForSequenceClassification,
+    Qwen2ForSequenceClassification,
+    VariationalModelConfig,
+    SequenceVariationalClassifierOutputWithPast,
+    VariationalPretrainedConfig,
+)
